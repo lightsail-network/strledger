@@ -2,7 +2,7 @@
 
 ## Installation
 ```shell
-pip install strledger
+pip install -U strledger
 ```
 
 ## Usage

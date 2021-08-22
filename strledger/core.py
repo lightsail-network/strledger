@@ -65,7 +65,7 @@ class StrLedger:
         data = self.client.apdu_exchange(
             ins=Ins.GET_CONF, sw1=P1.NO_SIGNATURE, sw2=P2.NON_CONFIRM
         )
-        hash_signing_enabled = not bool(data[0])
+        hash_signing_enabled = bool(data[0])
         version = f"{data[1]}.{data[2]}.{data[3]}"
         return AppConfiguration(
             version=version, hash_signing_enabled=hash_signing_enabled
