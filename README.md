@@ -1,5 +1,7 @@
 # strledger - Sign Stellar Transaction with Ledger on the command line.
 
+![example](./img/example.png)
+
 ## Installation
 ```shell
 pip install -U strledger
