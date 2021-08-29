@@ -149,7 +149,7 @@ def sign_transaction(
             echo_error(e)
             sys.exit(1)
 
-        echo_success(f"Submitted, transaction hash: {tx_hash}")
+        echo_success(f"Successfully submitted.")
         if network_passphrase == Network.PUBLIC_NETWORK_PASSPHRASE:
             url = f"https://stellar.expert/explorer/public/tx/{tx_hash}"
         elif network_passphrase == Network.TESTNET_NETWORK_PASSPHRASE:

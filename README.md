@@ -1,6 +1,6 @@
 # strledger - Sign Stellar Transaction with Ledger on the command line.
 
-![example](./img/example.png)
+![example](https://github.com/overcat/strledger/blob/main/img/example.png)
 
 ## Installation
 ```shell
