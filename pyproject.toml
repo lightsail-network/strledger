@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "strledger"
-version = "0.2.0"
+version = "0.2.1"
 description = "Sign Stellar Transaction with Ledger on the command line."
 authors = ["overcat <4catcode@gmail.com>"]
 license = "MIT License"
