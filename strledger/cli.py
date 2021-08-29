@@ -1,18 +1,20 @@
 import sys
-from typing import Callable
+from typing import Callable, Any
+from urllib.parse import urljoin
 
 import click
 from ledgerwallet import __version__ as ledger_wallet_version
 from ledgerwallet import utils
 from ledgerwallet.client import CommException, LedgerClient
 from ledgerwallet.transport import enumerate_devices
-from stellar_sdk import Network, parse_transaction_envelope_from_xdr
+from stellar_sdk import Network, parse_transaction_envelope_from_xdr, Server
+from stellar_sdk.exceptions import BaseRequestError
 
 from strledger import __issue__
 from strledger import __version__ as strledger_version
-from strledger.core import SW, StrLedger
+from strledger.core import SW, StrLedger, DEFAULT_KEYPAIR_INDEX
 
-_DEFAULT_KEYPAIR_INDEX = 0
+_DEFAULT_HORIZON_SERVER_URL = "https://horizon.stellar.org"
 
 
 def echo_normal(message: str) -> None:
@@ -23,8 +25,8 @@ def echo_success(message: str) -> None:
     click.echo(click.style(message, fg="green"))
 
 
-def echo_error(message: str) -> None:
-    click.echo(click.style(message, fg="red"))
+def echo_error(message: Any) -> None:
+    click.echo(click.style(message, fg="red"), err=True)
 
 
 @click.group()
@@ -76,7 +78,17 @@ def get_app_config(get_client: Callable[[], StrLedger]) -> None:
     type=int,
     required=False,
     help="Keypair Index.",
-    default=_DEFAULT_KEYPAIR_INDEX,
+    default=DEFAULT_KEYPAIR_INDEX,
+    show_default=True,
+)
+@click.option("-s", "--submit", is_flag=True, help="Submit to Stellar Network.")
+@click.option(
+    "-u",
+    "--horizon-url",
+    type=str,
+    required=False,
+    help="Horizon Server URL.",
+    default=_DEFAULT_HORIZON_SERVER_URL,
     show_default=True,
 )
 @click.argument("transaction_envelope")
@@ -86,6 +98,8 @@ def sign_transaction(
     network_passphrase: str,
     transaction_envelope: str,
     keypair_index: int,
+    submit: bool,
+    horizon_url: str,
 ):
     """Sign a base64-encoded transaction envelope.
 
@@ -93,8 +107,6 @@ def sign_transaction(
     'Test SDF Network ; September 2015'
     """
     client = get_client()
-    echo_normal(f"Network Passphrase: {network_passphrase}")
-    echo_normal("Please confirm this transaction on Ledger.")
     try:
         te = parse_transaction_envelope_from_xdr(
             xdr=transaction_envelope, network_passphrase=network_passphrase
@@ -107,6 +119,10 @@ def sign_transaction(
             "through XDR Viewer - https://laboratory.stellar.org/#xdr-viewer"
         )
         sys.exit(1)
+    tx_hash = te.hash_hex()
+    echo_normal(f"Network Passphrase: {network_passphrase}")
+    echo_normal(f"Transaction Hash: {tx_hash}")
+    echo_normal("Please confirm this transaction on Ledger.")
 
     try:
         client.sign_transaction(transaction_envelope=te, keypair_index=keypair_index)
@@ -119,8 +135,28 @@ def sign_transaction(
             echo_error(f"Unknown exception, you can the problem here: {__issue__}")
             raise
         sys.exit(1)
-    echo_success("Signed successfully. Base64-encoded signed transaction envelope:")
+
+    echo_success("Signed successfully.")
+    echo_success("Base64-encoded signed transaction envelope:")
     echo_success(te.to_xdr())
+    if submit:
+        echo_normal("Submitting to the network...")
+        server = Server(horizon_url)
+        try:
+            server.submit_transaction(te)
+        except BaseRequestError as e:
+            echo_error("submit failed, error info:")
+            echo_error(e)
+            sys.exit(1)
+
+        echo_success(f"Submitted, transaction hash: {tx_hash}")
+        if network_passphrase == Network.PUBLIC_NETWORK_PASSPHRASE:
+            url = f"https://stellar.expert/explorer/public/tx/{tx_hash}"
+        elif network_passphrase == Network.TESTNET_NETWORK_PASSPHRASE:
+            url = f"https://stellar.expert/explorer/testnet/tx/{tx_hash}"
+        else:
+            url = urljoin(horizon_url, f"/transactions/{tx_hash}")
+        echo_success(f"Stellar Explorer: {url}")
 
 
 @cli.command(name="get-address")
@@ -130,7 +166,7 @@ def sign_transaction(
     type=int,
     required=False,
     help="Keypair Index.",
-    default=_DEFAULT_KEYPAIR_INDEX,
+    default=DEFAULT_KEYPAIR_INDEX,
     show_default=True,
 )
 @click.pass_obj

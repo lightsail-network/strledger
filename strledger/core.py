@@ -1,11 +1,22 @@
 from enum import IntEnum
+from typing import Optional, Union
 
 from ledgerwallet.client import LedgerClient
 from ledgerwallet.params import Bip32Path
 from stellar_sdk import Keypair, TransactionEnvelope
 from stellar_sdk.xdr import DecoratedSignature, Signature, SignatureHint
 
-__all__ = ["Ins", "P1", "P2", "SW", "AppConfiguration", "StrLedger"]
+__all__ = [
+    "DEFAULT_KEYPAIR_INDEX",
+    "Ins",
+    "P1",
+    "P2",
+    "SW",
+    "AppConfiguration",
+    "StrLedger",
+]
+
+DEFAULT_KEYPAIR_INDEX = 0
 
 
 class Ins(IntEnum):
@@ -71,7 +82,7 @@ class StrLedger:
             version=version, hash_signing_enabled=hash_signing_enabled
         )
 
-    def get_keypair(self, keypair_index: int) -> Keypair:
+    def get_keypair(self, keypair_index: int = DEFAULT_KEYPAIR_INDEX) -> Keypair:
         path = Bip32Path.build(f"44'/148'/{keypair_index}'")
         data = self.client.apdu_exchange(
             ins=Ins.GET_PK, data=path, sw1=P1.NO_SIGNATURE, sw2=P2.NON_CONFIRM
@@ -80,7 +91,9 @@ class StrLedger:
         return keypair
 
     def sign_transaction(
-        self, transaction_envelope: TransactionEnvelope, keypair_index: int
+        self,
+        transaction_envelope: TransactionEnvelope,
+        keypair_index: int = DEFAULT_KEYPAIR_INDEX,
     ) -> None:
         sign_data = transaction_envelope.signature_base()
         keypair = self.get_keypair(keypair_index=keypair_index)
@@ -88,12 +101,13 @@ class StrLedger:
         path = Bip32Path.build(f"44'/148'/{keypair_index}'")
         payload = path + sign_data
         signature = self._send_payload(payload)
+        assert isinstance(signature, bytes)
         decorated_signature = DecoratedSignature(
             SignatureHint(keypair.signature_hint()), Signature(signature)
         )
         transaction_envelope.signatures.append(decorated_signature)
 
-    def _send_payload(self, payload):
+    def _send_payload(self, payload) -> Optional[Union[int, str]]:
         chunk_size = 255
         first = True
         while payload:
