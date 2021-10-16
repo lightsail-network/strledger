@@ -31,7 +31,7 @@ classifiers = [
 [tool.poetry.dependencies]
 python = "^3.6.2"
 click = "^8.0.1"
-stellar-sdk = "^4.1.0"
+stellar-sdk = "^5.0.0"
 ledgerwallet = "^0.1.2"
 construct = "2.10.61"
 
