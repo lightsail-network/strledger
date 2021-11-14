@@ -3,16 +3,18 @@ from typing import Optional, Union
 
 from ledgerwallet.client import LedgerClient
 from ledgerwallet.params import Bip32Path
-from stellar_sdk import Keypair, TransactionEnvelope
-from stellar_sdk.xdr import DecoratedSignature, Signature, SignatureHint
+from ledgerwallet.transport import enumerate_devices
+from stellar_sdk import Keypair, TransactionEnvelope, DecoratedSignature
 
 __all__ = [
+    "get_default_client",
+    "DeviceNotFoundException",
     "DEFAULT_KEYPAIR_INDEX",
     "Ins",
     "P1",
     "P2",
     "SW",
-    "AppConfiguration",
+    "AppInfo",
     "StrLedger",
 ]
 
@@ -51,7 +53,19 @@ class SW(IntEnum):
     KEEP_ALIVE = 0x6E02
 
 
-class AppConfiguration:
+class DeviceNotFoundException(Exception):
+    pass
+
+
+def get_default_client() -> "StrLedger":
+    devices = enumerate_devices()
+    if len(devices) == 0:
+        raise DeviceNotFoundException
+    client = LedgerClient(devices[0])
+    return StrLedger(client)
+
+
+class AppInfo:
     def __init__(self, version: str, hash_signing_enabled: bool) -> None:
         self.version = version
         self.hash_signing_enabled = hash_signing_enabled
@@ -72,15 +86,13 @@ class StrLedger:
     def __init__(self, client: LedgerClient) -> None:
         self.client = client
 
-    def get_app_configuration(self) -> AppConfiguration:
+    def get_app_info(self) -> AppInfo:
         data = self.client.apdu_exchange(
             ins=Ins.GET_CONF, sw1=P1.NO_SIGNATURE, sw2=P2.NON_CONFIRM
         )
         hash_signing_enabled = bool(data[0])
         version = f"{data[1]}.{data[2]}.{data[3]}"
-        return AppConfiguration(
-            version=version, hash_signing_enabled=hash_signing_enabled
-        )
+        return AppInfo(version=version, hash_signing_enabled=hash_signing_enabled)
 
     def get_keypair(self, keypair_index: int = DEFAULT_KEYPAIR_INDEX) -> Keypair:
         path = Bip32Path.build(f"44'/148'/{keypair_index}'")
@@ -103,7 +115,7 @@ class StrLedger:
         signature = self._send_payload(payload)
         assert isinstance(signature, bytes)
         decorated_signature = DecoratedSignature(
-            SignatureHint(keypair.signature_hint()), Signature(signature)
+            keypair.signature_hint(), signature
         )
         transaction_envelope.signatures.append(decorated_signature)
 

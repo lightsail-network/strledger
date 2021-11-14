@@ -5,14 +5,19 @@ from urllib.parse import urljoin
 import click
 from ledgerwallet import __version__ as ledger_wallet_version
 from ledgerwallet import utils
-from ledgerwallet.client import CommException, LedgerClient
-from ledgerwallet.transport import enumerate_devices
+from ledgerwallet.client import CommException
 from stellar_sdk import Network, parse_transaction_envelope_from_xdr, Server
 from stellar_sdk.exceptions import BaseRequestError
-
+from stellar_sdk import __version__ as stellar_sdk_version
 from strledger import __issue__
 from strledger import __version__ as strledger_version
-from strledger.core import SW, StrLedger, DEFAULT_KEYPAIR_INDEX
+from strledger.core import (
+    SW,
+    StrLedger,
+    DEFAULT_KEYPAIR_INDEX,
+    get_default_client,
+    DeviceNotFoundException,
+)
 
 _DEFAULT_HORIZON_SERVER_URL = "https://horizon.stellar.org"
 
@@ -43,22 +48,21 @@ def cli(ctx, verbose):
         utils.enable_apdu_log()
 
     def get_client() -> StrLedger:
-        devices = enumerate_devices()
-        if len(devices) == 0:
+        try:
+            return get_default_client()
+        except DeviceNotFoundException:
             echo_error("No Ledger device has been found.")
-            sys.exit(0)
-        client = LedgerClient(devices[0])
-        return StrLedger(client)
+            sys.exit(1)
 
     ctx.obj = get_client
 
 
-@cli.command(name="app-config")
+@cli.command(name="app-info")
 @click.pass_obj
-def get_app_config(get_client: Callable[[], StrLedger]) -> None:
-    """Get Stellar app config."""
+def get_app_info(get_client: Callable[[], StrLedger]) -> None:
+    """Get Stellar app info."""
     client = get_client()
-    data = client.get_app_configuration()
+    data = client.get_app_info()
     echo_success(f"Stellar App Version: {data.version}")
     enabled = "Yes" if data.hash_signing_enabled else "No"
     echo_success(f"Hash Signing Enabled: {enabled}")
@@ -179,9 +183,10 @@ def get_address(get_client: Callable[[], StrLedger], keypair_index: int) -> None
 
 @cli.command(name="version")
 def version() -> None:
-    """Get version info."""
+    """Get strledger version info."""
     echo_success(f"StrLedger Version: {strledger_version}")
     echo_success(f"Ledger Wallet Version: {ledger_wallet_version}")
+    echo_success(f"Stellar SDK Version: {stellar_sdk_version}")
 
 
 if __name__ == "__main__":

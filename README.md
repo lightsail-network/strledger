@@ -7,7 +7,7 @@
 pip install -U strledger
 ```
 
-## Usage
+## Cli Usage
 ```text
 Usage: strledger [OPTIONS] COMMAND [ARGS]...
 
@@ -20,8 +20,20 @@ Options:
   --help         Show this message and exit.
 
 Commands:
-  app-config   Get Stellar app config.
+  app-info     Get Stellar app info.
   get-address  Get Stellar public address.
   sign-tx      Sign a base64-encoded transaction envelope.
-  version      Get version info.
+  version      Get strledger version info.
+```
+
+## Library Usage
+
+```python
+from strledger import get_default_client
+
+client = get_default_client()
+# Use the Stellar Python SDK to build a transaction, see https://github.com/StellarCN/py-stellar-base
+transaction_envelope = ...
+client.sign_transaction(transaction_envelope=transaction_envelope, keypair_index=0)
+print(f"signed tx: {transaction_envelope.to_xdr()}")
 ```
