@@ -6,7 +6,13 @@ import click
 from ledgerwallet import __version__ as ledger_wallet_version
 from ledgerwallet import utils
 from ledgerwallet.client import CommException
-from stellar_sdk import Network, parse_transaction_envelope_from_xdr, Server
+from stellar_sdk import (
+    Network,
+    parse_transaction_envelope_from_xdr,
+    Server,
+    TransactionEnvelope,
+    FeeBumpTransactionEnvelope,
+)
 from stellar_sdk.exceptions import BaseRequestError
 from stellar_sdk import __version__ as stellar_sdk_version
 from strledger import __issue__
@@ -129,6 +135,7 @@ def sign_transaction(
     echo_normal("Please confirm this transaction on Ledger.")
 
     try:
+        assert isinstance(te, (TransactionEnvelope, FeeBumpTransactionEnvelope))
         client.sign_transaction(transaction_envelope=te, keypair_index=keypair_index)
     except CommException as e:
         if e.sw == SW.CANCEL:

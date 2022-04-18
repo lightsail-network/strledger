@@ -4,7 +4,12 @@ from typing import Optional, Union
 from ledgerwallet.client import LedgerClient
 from ledgerwallet.params import Bip32Path
 from ledgerwallet.transport import enumerate_devices
-from stellar_sdk import Keypair, TransactionEnvelope, DecoratedSignature
+from stellar_sdk import (
+    Keypair,
+    TransactionEnvelope,
+    DecoratedSignature,
+    FeeBumpTransactionEnvelope,
+)
 
 __all__ = [
     "get_default_client",
@@ -104,7 +109,7 @@ class StrLedger:
 
     def sign_transaction(
         self,
-        transaction_envelope: TransactionEnvelope,
+        transaction_envelope: Union[TransactionEnvelope, FeeBumpTransactionEnvelope],
         keypair_index: int = DEFAULT_KEYPAIR_INDEX,
     ) -> None:
         sign_data = transaction_envelope.signature_base()
@@ -114,9 +119,7 @@ class StrLedger:
         payload = path + sign_data
         signature = self._send_payload(payload)
         assert isinstance(signature, bytes)
-        decorated_signature = DecoratedSignature(
-            keypair.signature_hint(), signature
-        )
+        decorated_signature = DecoratedSignature(keypair.signature_hint(), signature)
         transaction_envelope.signatures.append(decorated_signature)
 
     def _send_payload(self, payload) -> Optional[Union[int, str]]:
