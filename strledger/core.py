@@ -1,3 +1,4 @@
+import binascii
 from enum import IntEnum
 from typing import Optional, Union
 
@@ -31,7 +32,6 @@ class Ins(IntEnum):
     SIGN_TX = 0x04
     GET_CONF = 0x06
     SIGN_TX_HASH = 0x08
-    KEEP_ALIVE = 0x10
 
 
 class P1(IntEnum):
@@ -93,16 +93,23 @@ class StrLedger:
 
     def get_app_info(self) -> AppInfo:
         data = self.client.apdu_exchange(
-            ins=Ins.GET_CONF, sw1=P1.NO_SIGNATURE, sw2=P2.NON_CONFIRM
+            ins=Ins.GET_CONF, sw1=P1.FIRST_APDU, sw2=P2.LAST_APDU
         )
         hash_signing_enabled = bool(data[0])
         version = f"{data[1]}.{data[2]}.{data[3]}"
         return AppInfo(version=version, hash_signing_enabled=hash_signing_enabled)
 
-    def get_keypair(self, keypair_index: int = DEFAULT_KEYPAIR_INDEX) -> Keypair:
+    def get_keypair(
+        self,
+        keypair_index: int = DEFAULT_KEYPAIR_INDEX,
+        confirm_on_device: bool = False,
+    ) -> Keypair:
         path = Bip32Path.build(f"44'/148'/{keypair_index}'")
         data = self.client.apdu_exchange(
-            ins=Ins.GET_PK, data=path, sw1=P1.NO_SIGNATURE, sw2=P2.NON_CONFIRM
+            ins=Ins.GET_PK,
+            data=path,
+            sw1=P1.NO_SIGNATURE,
+            sw2=P2.CONFIRM if confirm_on_device else P2.NON_CONFIRM,
         )
         keypair = Keypair.from_raw_ed25519_public_key(data)
         return keypair
@@ -121,6 +128,21 @@ class StrLedger:
         assert isinstance(signature, bytes)
         decorated_signature = DecoratedSignature(keypair.signature_hint(), signature)
         transaction_envelope.signatures.append(decorated_signature)
+
+    def sign_transaction_hash(
+        self,
+        transaction_hash: Union[str, bytes],
+        keypair_index: int = DEFAULT_KEYPAIR_INDEX,
+    ) -> bytes:
+        if isinstance(transaction_hash, str):
+            transaction_hash = binascii.unhexlify(transaction_hash)
+        path = Bip32Path.build(f"44'/148'/{keypair_index}'")
+        payload = path + transaction_hash
+
+        data = self.client.apdu_exchange(
+            ins=Ins.SIGN_TX_HASH, data=payload, sw1=P1.FIRST_APDU, sw2=P2.LAST_APDU
+        )
+        return data
 
     def _send_payload(self, payload) -> Optional[Union[int, str]]:
         chunk_size = 255

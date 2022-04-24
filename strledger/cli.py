@@ -1,3 +1,4 @@
+import base64
 import sys
 from typing import Callable, Any
 from urllib.parse import urljoin
@@ -170,6 +171,30 @@ def sign_transaction(
         echo_success(f"Stellar Explorer: {url}")
 
 
+@cli.command(name="sign-tx-hash")
+@click.option(
+    "-i",
+    "--keypair-index",
+    type=int,
+    required=False,
+    help="Keypair Index.",
+    default=DEFAULT_KEYPAIR_INDEX,
+    show_default=True,
+)
+@click.argument("transaction_hash")
+@click.pass_obj
+def sign_transaction(
+    get_client: Callable[[], StrLedger],
+    transaction_hash: str,
+    keypair_index: int,
+):
+    """Sign a hex encoded transaction hash."""
+    client = get_client()
+    signature = client.sign_transaction_hash(transaction_hash, keypair_index)
+    signature_base64 = base64.b64encode(signature).decode()
+    echo_success(signature_base64)
+
+
 @cli.command(name="get-address")
 @click.option(
     "-i",
@@ -180,11 +205,14 @@ def sign_transaction(
     default=DEFAULT_KEYPAIR_INDEX,
     show_default=True,
 )
+@click.option("-c", "--confirm", is_flag=True, help="Confirm address on the device.")
 @click.pass_obj
-def get_address(get_client: Callable[[], StrLedger], keypair_index: int) -> None:
+def get_address(
+    get_client: Callable[[], StrLedger], keypair_index: int, confirm: bool
+) -> None:
     """Get Stellar public address."""
     client = get_client()
-    keypair = client.get_keypair(keypair_index)
+    keypair = client.get_keypair(keypair_index, confirm)
     echo_success(keypair.public_key)
 
 
