@@ -35,8 +35,7 @@ class Ins(IntEnum):
 
 
 class P1(IntEnum):
-    NO_SIGNATURE = 0x00
-    SIGNATURE = 0x01
+    NONE = 0x00
     FIRST_APDU = 0x00
     MORE_APDU = 0x80
 
@@ -49,13 +48,44 @@ class P2(IntEnum):
 
 
 class SW(IntEnum):
-    OK = 0x9000
-    CANCEL = 0x6985
+    # Status word for fail of transaction formatting.
+    TX_FORMATTING_FAIL = 0x6125
+    # Status word for denied by user.
+    DENY = 0x6985
+    # Status word for either wrong Lc or minimum APDU lenght is incorrect.
+    WRONG_DATA_LENGTH = 0x6A87
+    # Status word for incorrect P1 or P2.
+    WRONG_P1P2 = 0x6B00
+    # Unknown stellar operation
     UNKNOWN_OP = 0x6C24
-    MULTI_OP = 0x6C25
-    NOT_ALLOWED = 0x6C66
-    UNSUPPORTED = 0x6D00
-    KEEP_ALIVE = 0x6E02
+    # Unknown stellar operation
+    UNKNOWN_ENVELOPE_TYPE = 0x6C25
+    # Status word for hash signing model not enabled.
+    TX_HASH_SIGNING_MODE_NOT_ENABLED = 0x6C66
+    # Status word for unknown command with this INS.
+    INS_NOT_SUPPORTED = 0x6D00
+    # Status word for instruction class is different than CLA.
+    CLA_NOT_SUPPORTED = 0x6E00
+    # Status word for wrong response length (buffer too small or too big).
+    WRONG_RESPONSE_LENGTH = 0xB000
+    # Status word for fail to display address.
+    DISPLAY_ADDRESS_FAIL = 0xB002
+    # Status word for fail to display transaction hash.
+    DISPLAY_TRANSACTION_HASH_FAIL = 0xB003
+    # Status word for wrong transaction length.
+    WRONG_TX_LENGTH = 0xB004
+    # Status word for fail of transaction parsing.
+    TX_PARSING_FAIL = 0xB005
+    # Status word for fail of transaction hash.
+    TX_HASH_FAIL = 0xB006
+    # Status word for bad state.
+    BAD_STATE = 0xB007
+    # Status word for signature fail.
+    SIGNATURE_FAIL = 0xB008
+    # Status word for fail to check swap params
+    SWAP_CHECKING_FAIL = 0xB009
+    # Status word for success.
+    OK = 0x9000
 
 
 class DeviceNotFoundException(Exception):
@@ -93,7 +123,7 @@ class StrLedger:
 
     def get_app_info(self) -> AppInfo:
         data = self.client.apdu_exchange(
-            ins=Ins.GET_CONF, sw1=P1.FIRST_APDU, sw2=P2.LAST_APDU
+            ins=Ins.GET_CONF, p1=P1.FIRST_APDU, p2=P2.LAST_APDU
         )
         hash_signing_enabled = bool(data[0])
         version = f"{data[1]}.{data[2]}.{data[3]}"
@@ -108,8 +138,8 @@ class StrLedger:
         data = self.client.apdu_exchange(
             ins=Ins.GET_PK,
             data=path,
-            sw1=P1.NO_SIGNATURE,
-            sw2=P2.CONFIRM if confirm_on_device else P2.NON_CONFIRM,
+            p1=P1.NONE,
+            p2=P2.CONFIRM if confirm_on_device else P2.NON_CONFIRM,
         )
         keypair = Keypair.from_raw_ed25519_public_key(data)
         return keypair
@@ -140,7 +170,7 @@ class StrLedger:
         payload = path + transaction_hash
 
         data = self.client.apdu_exchange(
-            ins=Ins.SIGN_TX_HASH, data=payload, sw1=P1.FIRST_APDU, sw2=P2.LAST_APDU
+            ins=Ins.SIGN_TX_HASH, data=payload, p1=P1.FIRST_APDU, p2=P2.LAST_APDU
         )
         return data
 

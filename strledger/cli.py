@@ -139,10 +139,14 @@ def sign_transaction(
         assert isinstance(te, (TransactionEnvelope, FeeBumpTransactionEnvelope))
         client.sign_transaction(transaction_envelope=te, keypair_index=keypair_index)
     except CommException as e:
-        if e.sw == SW.CANCEL:
-            echo_error("Transaction approval request was rejected.")
+        if e.sw == SW.DENY:
+            echo_error("The request to sign the transaction was denied.")
         elif e.sw == SW.UNKNOWN_OP:
             echo_error("The transaction contains unsupported operation(s).")
+        elif e.sw == SW.UNKNOWN_ENVELOPE_TYPE:
+            echo_error(
+                "The transaction contains unsupported transaction envelope type."
+            )
         else:
             echo_error(f"Unknown exception, you can the problem here: {__issue__}")
             raise
@@ -183,14 +187,26 @@ def sign_transaction(
 )
 @click.argument("transaction_hash")
 @click.pass_obj
-def sign_transaction(
+def sign_transaction_hash(
     get_client: Callable[[], StrLedger],
     transaction_hash: str,
     keypair_index: int,
 ):
     """Sign a hex encoded transaction hash."""
     client = get_client()
-    signature = client.sign_transaction_hash(transaction_hash, keypair_index)
+    try:
+        signature = client.sign_transaction_hash(transaction_hash, keypair_index)
+    except CommException as e:
+        if e.sw == SW.TX_HASH_SIGNING_MODE_NOT_ENABLED:
+            echo_error(
+                "Hash signing is not enabled on this device.\n"
+                "Please enable it on the device and try again."
+            )
+        elif e.sw == SW.DENY:
+            echo_error("The request to sign the transaction hash was denied.")
+            sys.exit(1)
+        else:
+            raise e
     signature_base64 = base64.b64encode(signature).decode()
     echo_success(signature_base64)
 
@@ -212,7 +228,14 @@ def get_address(
 ) -> None:
     """Get Stellar public address."""
     client = get_client()
-    keypair = client.get_keypair(keypair_index, confirm)
+    try:
+        keypair = client.get_keypair(keypair_index, confirm)
+    except CommException as e:
+        if e.sw == SW.DENY:
+            echo_error("The request to confirm the address was denied.")
+            sys.exit(1)
+        else:
+            raise e
     echo_success(keypair.public_key)
 
 
