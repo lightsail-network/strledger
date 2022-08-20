@@ -231,7 +231,6 @@ def get_address(
     try:
         keypair = client.get_keypair(keypair_index, confirm)
     except CommException as e:
-
         if e.sw == SW.DENY:
             echo_error("The request to confirm the address was denied.")
             sys.exit(1)
