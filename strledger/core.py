@@ -11,6 +11,7 @@ from stellar_sdk import (
     DecoratedSignature,
     FeeBumpTransactionEnvelope,
 )
+from stellar_sdk.xdr import HashIDPreimage, EnvelopeType
 
 __all__ = [
     "get_default_client",
@@ -32,6 +33,7 @@ class Ins(IntEnum):
     SIGN_TX = 0x04
     GET_CONF = 0x06
     SIGN_TX_HASH = 0x08
+    SIGN_SOROBAN_AUTHORIZATION = 0x0A
 
 
 class P1(IntEnum):
@@ -154,7 +156,7 @@ class StrLedger:
 
         path = Bip32Path.build(f"44'/148'/{keypair_index}'")
         payload = path + sign_data
-        signature = self._send_payload(payload)
+        signature = self._send_payload(Ins.SIGN_TX, payload)
         assert isinstance(signature, bytes)
         decorated_signature = DecoratedSignature(keypair.signature_hint(), signature)
         transaction_envelope.signatures.append(decorated_signature)
@@ -174,7 +176,30 @@ class StrLedger:
         )
         return data
 
-    def _send_payload(self, payload) -> Optional[Union[int, str]]:
+    def sign_soroban_authorization(
+        self,
+        soroban_authorization: Union[str, bytes, HashIDPreimage],
+        keypair_index: int = DEFAULT_KEYPAIR_INDEX,
+    ) -> bytes:
+        if isinstance(soroban_authorization, str):
+            soroban_authorization = HashIDPreimage.from_xdr(soroban_authorization)
+        if isinstance(soroban_authorization, bytes):
+            soroban_authorization = HashIDPreimage.from_xdr_bytes(soroban_authorization)
+
+        if (
+            soroban_authorization.type
+            != EnvelopeType.ENVELOPE_TYPE_SOROBAN_AUTHORIZATION
+        ):
+            raise ValueError(
+                f"Invalid type, expected {EnvelopeType.ENVELOPE_TYPE_SOROBAN_AUTHORIZATION}, but got {soroban_authorization.type}"
+            )
+        path = Bip32Path.build(f"44'/148'/{keypair_index}'")
+        payload = path + soroban_authorization.to_xdr_bytes()
+        signature = self._send_payload(Ins.SIGN_SOROBAN_AUTHORIZATION, payload)
+        assert isinstance(signature, bytes)
+        return signature
+
+    def _send_payload(self, ins: Ins, payload) -> Optional[Union[int, bytes]]:
         chunk_size = 255
         first = True
         while payload:
@@ -190,7 +215,7 @@ class StrLedger:
             else:
                 p2 = P2.LAST_APDU
 
-            resp = self.client.apdu_exchange(Ins.SIGN_TX, payload[:size], p1, p2)
+            resp = self.client.apdu_exchange(ins, payload[:size], p1, p2)
             if resp:
                 return resp
             payload = payload[size:]

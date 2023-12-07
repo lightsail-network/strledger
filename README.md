@@ -13,17 +13,20 @@ Usage: strledger [OPTIONS] COMMAND [ARGS]...
 
   Stellar Ledger commands.
 
-  This project is built on the basis of ledgerctl, you can check ledgerctl for more features.
+  This project is built on the basis of ledgerctl, you can check ledgerctl for
+  more features.
 
 Options:
   -v, --verbose  Display exchanged APDU.
   --help         Show this message and exit.
 
 Commands:
-  app-info     Get Stellar app info.
-  get-address  Get Stellar public address.
-  sign-tx      Sign a base64-encoded transaction envelope.
-  version      Get strledger version info.
+  app-info      Get Stellar app info.
+  get-address   Get Stellar public address.
+  sign-auth     Sign a base64-encoded soroban authorization...
+  sign-tx       Sign a base64-encoded transaction envelope.
+  sign-tx-hash  Sign a hex encoded transaction hash.
+  version       Get strledger version info.
 ```
 
 ## Library Usage

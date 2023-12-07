@@ -14,6 +14,7 @@ from stellar_sdk import (
     TransactionEnvelope,
     FeeBumpTransactionEnvelope,
 )
+from stellar_sdk.xdr import HashIDPreimage
 from stellar_sdk.exceptions import BaseRequestError
 from stellar_sdk import __version__ as stellar_sdk_version
 from strledger import __issue__
@@ -25,6 +26,7 @@ from strledger.core import (
     get_default_client,
     DeviceNotFoundException,
 )
+from stellar_sdk.utils import sha256
 
 _DEFAULT_HORIZON_SERVER_URL = "https://horizon.stellar.org"
 
@@ -237,6 +239,56 @@ def get_address(
         else:
             raise e
     echo_success(keypair.public_key)
+
+
+@cli.command(name="sign-auth")
+@click.option(
+    "-i",
+    "--keypair-index",
+    type=int,
+    required=False,
+    help="Keypair Index.",
+    default=DEFAULT_KEYPAIR_INDEX,
+    show_default=True,
+)
+@click.argument("soroban_authorization")
+@click.pass_obj
+def sign_soroban_authorization(
+    get_client: Callable[[], StrLedger],
+    keypair_index: int,
+    soroban_authorization: str,
+):
+    """Sign a base64-encoded soroban authorization (HashIDPreimage)."""
+    client = get_client()
+    try:
+        auth = HashIDPreimage.from_xdr(soroban_authorization)
+    except Exception:
+        echo_error(
+            "Failed to parse XDR.\n"
+            "Make sure to pass a valid base64-encoded soroban authorization."
+        )
+        sys.exit(1)
+
+    echo_normal(f"HashIDPreimage Hash: {sha256(auth.to_xdr_bytes()).hex()}")
+    echo_normal("Please confirm this transaction on Ledger.")
+
+    signature = None
+    try:
+        signature = client.sign_soroban_authorization(auth, keypair_index=keypair_index)
+        echo_success("Signed successfully.")
+        echo_success("Base64-encoded signature:")
+        echo_success(base64.b64encode(signature).decode())
+    except CommException as e:
+        if e.sw == SW.DENY:
+            echo_error("The request to sign the soroban auth was denied.")
+        elif e.sw == SW.UNKNOWN_ENVELOPE_TYPE:
+            echo_error(
+                "The transaction contains unsupported transaction envelope type."
+            )
+        else:
+            echo_error(f"Unknown exception, you can the problem here: {__issue__}")
+            raise
+        sys.exit(1)
 
 
 @cli.command(name="version")
