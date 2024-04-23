@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "strledger"
-version = "0.6.0"
+version = "0.6.1"
 description = "Sign Stellar Transaction with Ledger on the command line."
 authors = ["overcat <4catcode@gmail.com>"]
 license = "MIT License"
@@ -27,7 +27,7 @@ classifiers = [
 ]
 
 [tool.poetry.urls]
-"Bug Tracker" = "https://github.com/overcat/strledger/issues"
+"Bug Tracker" = "https://github.com/lightsail-network/strledger/issues"
 
 [tool.poetry.dependencies]
 python = ">=3.8,<4.0"

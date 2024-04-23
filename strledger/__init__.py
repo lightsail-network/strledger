@@ -1,4 +1,4 @@
-__version__ = "0.5.0"
-__issue__ = "https://github.com/overcat/strledger/issues"
+__version__ = "0.6.1"
+__issue__ = "https://github.com/lightsail-network/strledger/issues"
 
 from strledger.core import *
