@@ -8,6 +8,7 @@ from ledgerwallet import __version__ as ledger_wallet_version
 from ledgerwallet import utils
 from ledgerwallet.client import CommException
 from stellar_sdk import (
+    DecoratedSignature,
     Network,
     parse_transaction_envelope_from_xdr,
     Server,
@@ -94,6 +95,12 @@ def get_app_info(get_client: Callable[[], StrLedger]) -> None:
     default=DEFAULT_KEYPAIR_INDEX,
     show_default=True,
 )
+@click.option(
+    "-a",
+    "--hash-signing",
+    is_flag=True,
+    help="Only send the hash to the device for signing.",
+)
 @click.option("-s", "--submit", is_flag=True, help="Submit to Stellar Network.")
 @click.option(
     "-u",
@@ -111,6 +118,7 @@ def sign_transaction(
     network_passphrase: str,
     transaction_envelope: str,
     keypair_index: int,
+    hash_signing: bool,
     submit: bool,
     horizon_url: str,
 ):
@@ -137,22 +145,42 @@ def sign_transaction(
     echo_normal(f"Transaction Hash: {tx_hash}")
     echo_normal("Please confirm this transaction on Ledger.")
 
-    try:
-        assert isinstance(te, (TransactionEnvelope, FeeBumpTransactionEnvelope))
-        client.sign_transaction(transaction_envelope=te, keypair_index=keypair_index)
-    except CommException as e:
-        if e.sw == SW.DENY:
-            echo_error("The request to sign the transaction was denied.")
-        elif e.sw == SW.UNKNOWN_OP:
-            echo_error("The transaction contains unsupported operation(s).")
-        elif e.sw == SW.UNKNOWN_ENVELOPE_TYPE:
-            echo_error(
-                "The transaction contains unsupported transaction envelope type."
+    if hash_signing:
+        try:
+            signature = client.sign_transaction_hash(tx_hash, keypair_index)
+        except CommException as e:
+            if e.sw == SW.TX_HASH_SIGNING_MODE_NOT_ENABLED:
+                echo_error(
+                    "Hash signing is not enabled on this device.\n"
+                    "Please enable it on the device and try again."
+                )
+            elif e.sw == SW.DENY:
+                echo_error("The request to sign the transaction hash was denied.")
+                sys.exit(1)
+            else:
+                raise e
+        keypair = client.get_keypair(keypair_index=keypair_index)
+        decorated_signature = DecoratedSignature(keypair.signature_hint(), signature)
+        te.signatures.append(decorated_signature)
+    else:
+        try:
+            assert isinstance(te, (TransactionEnvelope, FeeBumpTransactionEnvelope))
+            client.sign_transaction(
+                transaction_envelope=te, keypair_index=keypair_index
             )
-        else:
-            echo_error(f"Unknown exception, you can the problem here: {__issue__}")
-            raise
-        sys.exit(1)
+        except CommException as e:
+            if e.sw == SW.DENY:
+                echo_error("The request to sign the transaction was denied.")
+            elif e.sw == SW.UNKNOWN_OP:
+                echo_error("The transaction contains unsupported operation(s).")
+            elif e.sw == SW.UNKNOWN_ENVELOPE_TYPE:
+                echo_error(
+                    "The transaction contains unsupported transaction envelope type."
+                )
+            else:
+                echo_error(f"Unknown exception, you can the problem here: {__issue__}")
+                raise
+            sys.exit(1)
 
     echo_success("Signed successfully.")
     echo_success("Base64-encoded signed transaction envelope:")
