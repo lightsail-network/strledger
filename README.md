@@ -25,7 +25,7 @@ Commands:
   get-address   Get Stellar public address.
   sign-auth     Sign a base64-encoded soroban authorization...
   sign-tx       Sign a base64-encoded transaction envelope.
-  sign-tx-hash  Sign a hex encoded transaction hash.
+  sign-tx-hash  Sign a hex encoded hash.
   version       Get strledger version info.
 ```
 

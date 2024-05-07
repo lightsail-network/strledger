@@ -1,4 +1,5 @@
 import binascii
+import dataclasses
 from enum import IntEnum
 from typing import Optional, Union
 
@@ -29,20 +30,26 @@ DEFAULT_KEYPAIR_INDEX = 0
 
 
 class Ins(IntEnum):
+    """Instruction enum for APDU commands."""
+
     GET_PK = 0x02
     SIGN_TX = 0x04
     GET_CONF = 0x06
-    SIGN_TX_HASH = 0x08
+    SIGN_HASH = 0x08
     SIGN_SOROBAN_AUTHORIZATION = 0x0A
 
 
 class P1(IntEnum):
+    """P1 parameter enum for APDU commands."""
+
     NONE = 0x00
     FIRST_APDU = 0x00
     MORE_APDU = 0x80
 
 
 class P2(IntEnum):
+    """P2 parameter enum for APDU commands."""
+
     NON_CONFIRM = 0x00
     CONFIRM = 0x01
     LAST_APDU = 0x00
@@ -50,51 +57,36 @@ class P2(IntEnum):
 
 
 class SW(IntEnum):
-    # Status word for fail of transaction formatting.
-    TX_FORMATTING_FAIL = 0x6125
+    """Status Words enum for APDU responses.
+
+    See https://github.com/lightsail-network/app-stellar/blob/develop/docs/COMMANDS.md#status-words
+    """
+
     # Status word for denied by user.
     DENY = 0x6985
-    # Status word for either wrong Lc or minimum APDU lenght is incorrect.
-    WRONG_DATA_LENGTH = 0x6A87
-    # Status word for incorrect P1 or P2.
-    WRONG_P1P2 = 0x6B00
-    # Unknown stellar operation
-    UNKNOWN_OP = 0x6C24
-    # Unknown stellar operation
-    UNKNOWN_ENVELOPE_TYPE = 0x6C25
     # Status word for hash signing model not enabled.
     TX_HASH_SIGNING_MODE_NOT_ENABLED = 0x6C66
-    # Status word for unknown command with this INS.
-    INS_NOT_SUPPORTED = 0x6D00
-    # Status word for instruction class is different than CLA.
-    CLA_NOT_SUPPORTED = 0x6E00
-    # Status word for wrong response length (buffer too small or too big).
-    WRONG_RESPONSE_LENGTH = 0xB000
-    # Status word for fail to display address.
-    DISPLAY_ADDRESS_FAIL = 0xB002
-    # Status word for fail to display transaction hash.
-    DISPLAY_TRANSACTION_HASH_FAIL = 0xB003
-    # Status word for wrong transaction length.
-    WRONG_TX_LENGTH = 0xB004
-    # Status word for fail of transaction parsing.
-    TX_PARSING_FAIL = 0xB005
-    # Status word for fail of transaction hash.
-    TX_HASH_FAIL = 0xB006
-    # Status word for bad state.
-    BAD_STATE = 0xB007
-    # Status word for signature fail.
-    SIGNATURE_FAIL = 0xB008
-    # Status word for fail to check swap params
-    SWAP_CHECKING_FAIL = 0xB009
+    # Status word for data too large.
+    SW_REQUEST_DATA_TOO_LARGE = 0x6C67
     # Status word for success.
     OK = 0x9000
 
 
 class DeviceNotFoundException(Exception):
+    """Exception raised when no Ledger device is found."""
+
     pass
 
 
 def get_default_client() -> "StrLedger":
+    """Get the default Ledger client.
+
+    Returns:
+        StrLedger: The default Ledger client instance.
+
+    Raises:
+        DeviceNotFoundException: If no Ledger device is found.
+    """
     devices = enumerate_devices()
     if len(devices) == 0:
         raise DeviceNotFoundException
@@ -102,28 +94,33 @@ def get_default_client() -> "StrLedger":
     return StrLedger(client)
 
 
+@dataclasses.dataclass
 class AppInfo:
-    def __init__(self, version: str, hash_signing_enabled: bool) -> None:
-        self.version = version
-        self.hash_signing_enabled = hash_signing_enabled
+    """App configuration information."""
 
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, self.__class__):
-            return NotImplemented
-        return (
-            self.version == other.version
-            and self.hash_signing_enabled == other.hash_signing_enabled
-        )
-
-    def __str__(self) -> str:
-        return f"AppConfiguration(version='{self.version}', hash_signing_enabled={self.hash_signing_enabled})"
+    version: str
+    """The version of the app."""
+    hash_signing_enabled: bool
+    """Whether hash signing is enabled."""
 
 
 class StrLedger:
+    """Stellar Ledger client class."""
+
     def __init__(self, client: LedgerClient) -> None:
+        """Initialize the Stellar Ledger client.
+
+        Args:
+            client (LedgerClient): The Ledger client instance.
+        """
         self.client = client
 
     def get_app_info(self) -> AppInfo:
+        """Get the app configuration information.
+
+        Returns:
+            AppInfo: The app configuration information.
+        """
         data = self.client.apdu_exchange(
             ins=Ins.GET_CONF, p1=P1.FIRST_APDU, p2=P2.LAST_APDU
         )
@@ -136,6 +133,15 @@ class StrLedger:
         keypair_index: int = DEFAULT_KEYPAIR_INDEX,
         confirm_on_device: bool = False,
     ) -> Keypair:
+        """Get the public key for the specified keypair index.
+
+        Args:
+            keypair_index (int): The keypair index (default is 0).
+            confirm_on_device (bool): Whether to confirm the action on the device (default is False).
+
+        Returns:
+            Keypair: The keypair instance.
+        """
         path = Bip32Path.build(f"44'/148'/{keypair_index}'")
         data = self.client.apdu_exchange(
             ins=Ins.GET_PK,
@@ -151,6 +157,12 @@ class StrLedger:
         transaction_envelope: Union[TransactionEnvelope, FeeBumpTransactionEnvelope],
         keypair_index: int = DEFAULT_KEYPAIR_INDEX,
     ) -> None:
+        """Sign a transaction envelope.
+
+        Args:
+            transaction_envelope (Union[TransactionEnvelope, FeeBumpTransactionEnvelope]): The transaction envelope to sign.
+            keypair_index (int): The keypair index (default is 0).
+        """
         sign_data = transaction_envelope.signature_base()
         keypair = self.get_keypair(keypair_index=keypair_index)
 
@@ -161,18 +173,27 @@ class StrLedger:
         decorated_signature = DecoratedSignature(keypair.signature_hint(), signature)
         transaction_envelope.signatures.append(decorated_signature)
 
-    def sign_transaction_hash(
+    def sign_hash(
         self,
         transaction_hash: Union[str, bytes],
         keypair_index: int = DEFAULT_KEYPAIR_INDEX,
     ) -> bytes:
+        """Sign a transaction hash.
+
+        Args:
+            transaction_hash (Union[str, bytes]): The transaction hash to sign.
+            keypair_index (int): The keypair index (default is 0).
+
+        Returns:
+            bytes: The signature.
+        """
         if isinstance(transaction_hash, str):
             transaction_hash = binascii.unhexlify(transaction_hash)
         path = Bip32Path.build(f"44'/148'/{keypair_index}'")
         payload = path + transaction_hash
 
         data = self.client.apdu_exchange(
-            ins=Ins.SIGN_TX_HASH, data=payload, p1=P1.FIRST_APDU, p2=P2.LAST_APDU
+            ins=Ins.SIGN_HASH, data=payload, p1=P1.FIRST_APDU, p2=P2.LAST_APDU
         )
         return data
 
@@ -181,6 +202,18 @@ class StrLedger:
         soroban_authorization: Union[str, bytes, HashIDPreimage],
         keypair_index: int = DEFAULT_KEYPAIR_INDEX,
     ) -> bytes:
+        """Sign a Soroban authorization.
+
+        Args:
+            soroban_authorization (Union[str, bytes, HashIDPreimage]): The Soroban authorization to sign.
+            keypair_index (int): The keypair index (default is 0).
+
+        Returns:
+            bytes: The signature.
+
+        Raises:
+            ValueError: If the Soroban authorization type is invalid.
+        """
         if isinstance(soroban_authorization, str):
             soroban_authorization = HashIDPreimage.from_xdr(soroban_authorization)
         if isinstance(soroban_authorization, bytes):
@@ -200,6 +233,15 @@ class StrLedger:
         return signature
 
     def _send_payload(self, ins: Ins, payload) -> Optional[Union[int, bytes]]:
+        """Send a payload to the Ledger device.
+
+        Args:
+            ins (Ins): The instruction for the APDU command.
+            payload: The payload to send.
+
+        Returns:
+            Optional[Union[int, bytes]]: The response from the Ledger device.
+        """
         chunk_size = 255
         first = True
         while payload:
