@@ -1,9 +1,10 @@
 import binascii
+import copy
 import dataclasses
 from enum import IntEnum
 from typing import Optional, Union
 
-from ledgerwallet.client import LedgerClient
+from ledgerwallet.client import LedgerClient, CommException
 from ledgerwallet.params import Bip32Path
 from ledgerwallet.transport import enumerate_devices
 from stellar_sdk import (
@@ -15,17 +16,16 @@ from stellar_sdk import (
 from stellar_sdk.xdr import HashIDPreimage, EnvelopeType
 
 __all__ = [
-    "get_default_client",
-    "DeviceNotFoundException",
-    "DEFAULT_KEYPAIR_INDEX",
-    "Ins",
-    "P1",
-    "P2",
-    "SW",
-    "AppInfo",
     "StrLedger",
+    "BaseError",
+    "DeviceNotFoundException",
+    "HashSigningNotEnabledError",
+    "UserRefusedError",
+    "DataParsingFailedError",
+    "RequestDataTooLargeError",
 ]
 
+APDU_MAX_PAYLOAD = 255
 DEFAULT_KEYPAIR_INDEX = 0
 
 
@@ -65,68 +65,56 @@ class SW(IntEnum):
     # Status word for denied by user.
     DENY = 0x6985
     # Status word for hash signing model not enabled.
-    TX_HASH_SIGNING_MODE_NOT_ENABLED = 0x6C66
+    HASH_SIGNING_MODE_NOT_ENABLED = 0x6C66
     # Status word for data too large.
-    SW_REQUEST_DATA_TOO_LARGE = 0x6C67
+    REQUEST_DATA_TOO_LARGE = 0xB004
+    # Status word for data parsing fail.
+    DATA_PARSING_FAIL = 0xB005
     # Status word for success.
     OK = 0x9000
 
 
-class DeviceNotFoundException(Exception):
-    """Exception raised when no Ledger device is found."""
-
-    pass
-
-
-def get_default_client() -> "StrLedger":
-    """Get the default Ledger client.
-
-    Returns:
-        StrLedger: The default Ledger client instance.
-
-    Raises:
-        DeviceNotFoundException: If no Ledger device is found.
-    """
-    devices = enumerate_devices()
-    if len(devices) == 0:
-        raise DeviceNotFoundException
-    client = LedgerClient(devices[0])
-    return StrLedger(client)
-
-
 @dataclasses.dataclass
-class AppInfo:
+class AppConfiguration:
     """App configuration information."""
 
     version: str
     """The version of the app."""
     hash_signing_enabled: bool
     """Whether hash signing is enabled."""
+    max_data_size: Optional[int] = None
+    """The maximum data size in bytes that the device can sign"""
 
 
 class StrLedger:
     """Stellar Ledger client class."""
 
-    def __init__(self, client: LedgerClient) -> None:
+    def __init__(self, client: LedgerClient = None) -> None:
         """Initialize the Stellar Ledger client.
 
         Args:
-            client (LedgerClient): The Ledger client instance.
+            client (LedgerClient): The Ledger client instance, or None to use the default client.
         """
+        if client is None:
+            client = _get_default_client()
         self.client = client
 
-    def get_app_info(self) -> AppInfo:
+    def get_app_info(self) -> AppConfiguration:
         """Get the app configuration information.
 
         Returns:
-            AppInfo: The app configuration information.
+            AppConfiguration: The app configuration information.
         """
-        data = self.client.apdu_exchange(
-            ins=Ins.GET_CONF, p1=P1.FIRST_APDU, p2=P2.LAST_APDU
+        data = self._send_payload(Ins.GET_CONF, b"")
+        hash_signing_enabled = data[0] == 0x01
+        major, minor, patch = data[1], data[2], data[3]
+        version = f"{major}.{minor}.{patch}"
+        max_data_size = (data[4] << 8 | data[5]) if len(data) > 4 else None
+        return AppConfiguration(
+            version=version,
+            hash_signing_enabled=hash_signing_enabled,
+            max_data_size=max_data_size,
         )
-        hash_signing_enabled = bool(data[0])
-        version = f"{data[1]}.{data[2]}.{data[3]}"
-        return AppInfo(version=version, hash_signing_enabled=hash_signing_enabled)
 
     def get_keypair(
         self,
@@ -143,12 +131,15 @@ class StrLedger:
             Keypair: The keypair instance.
         """
         path = Bip32Path.build(f"44'/148'/{keypair_index}'")
-        data = self.client.apdu_exchange(
-            ins=Ins.GET_PK,
-            data=path,
-            p1=P1.NONE,
-            p2=P2.CONFIRM if confirm_on_device else P2.NON_CONFIRM,
-        )
+        try:
+            data = self.client.apdu_exchange(
+                ins=Ins.GET_PK,
+                data=path,
+                p1=P1.NONE,
+                p2=P2.CONFIRM if confirm_on_device else P2.NON_CONFIRM,
+            )
+        except CommException as e:
+            raise _remap_error(e) from e
         keypair = Keypair.from_raw_ed25519_public_key(data)
         return keypair
 
@@ -156,12 +147,15 @@ class StrLedger:
         self,
         transaction_envelope: Union[TransactionEnvelope, FeeBumpTransactionEnvelope],
         keypair_index: int = DEFAULT_KEYPAIR_INDEX,
-    ) -> None:
+    ) -> Union[TransactionEnvelope, FeeBumpTransactionEnvelope]:
         """Sign a transaction envelope.
 
         Args:
             transaction_envelope (Union[TransactionEnvelope, FeeBumpTransactionEnvelope]): The transaction envelope to sign.
             keypair_index (int): The keypair index (default is 0).
+
+        Returns:
+            Union[TransactionEnvelope, FeeBumpTransactionEnvelope]: The signed transaction envelope.
         """
         sign_data = transaction_envelope.signature_base()
         keypair = self.get_keypair(keypair_index=keypair_index)
@@ -171,7 +165,9 @@ class StrLedger:
         signature = self._send_payload(Ins.SIGN_TX, payload)
         assert isinstance(signature, bytes)
         decorated_signature = DecoratedSignature(keypair.signature_hint(), signature)
-        transaction_envelope.signatures.append(decorated_signature)
+        copy_transaction_envelope = copy.deepcopy(transaction_envelope)
+        copy_transaction_envelope.signatures.append(decorated_signature)
+        return copy_transaction_envelope
 
     def sign_hash(
         self,
@@ -191,11 +187,8 @@ class StrLedger:
             transaction_hash = binascii.unhexlify(transaction_hash)
         path = Bip32Path.build(f"44'/148'/{keypair_index}'")
         payload = path + transaction_hash
-
-        data = self.client.apdu_exchange(
-            ins=Ins.SIGN_HASH, data=payload, p1=P1.FIRST_APDU, p2=P2.LAST_APDU
-        )
-        return data
+        signature = self._send_payload(Ins.SIGN_HASH, payload)
+        return signature
 
     def sign_soroban_authorization(
         self,
@@ -229,10 +222,9 @@ class StrLedger:
         path = Bip32Path.build(f"44'/148'/{keypair_index}'")
         payload = path + soroban_authorization.to_xdr_bytes()
         signature = self._send_payload(Ins.SIGN_SOROBAN_AUTHORIZATION, payload)
-        assert isinstance(signature, bytes)
         return signature
 
-    def _send_payload(self, ins: Ins, payload) -> Optional[Union[int, bytes]]:
+    def _send_payload(self, ins: Ins, payload) -> bytes:
         """Send a payload to the Ledger device.
 
         Args:
@@ -242,22 +234,88 @@ class StrLedger:
         Returns:
             Optional[Union[int, bytes]]: The response from the Ledger device.
         """
-        chunk_size = 255
-        first = True
-        while payload:
-            if first:
-                p1 = P1.FIRST_APDU
-                first = False
-            else:
-                p1 = P1.MORE_APDU
+        response = b""
+        remaining = len(payload)
+        while True:
+            chunk_size = min(remaining, APDU_MAX_PAYLOAD)
+            p1 = P1.FIRST_APDU if remaining == len(payload) else P1.MORE_APDU
+            p2 = P2.LAST_APDU if remaining - chunk_size == 0 else P2.MORE_APDU
+            chunk = payload[
+                len(payload) - remaining : len(payload) - remaining + chunk_size
+            ]
+            try:
+                response = self.client.apdu_exchange(ins=ins, p1=p1, p2=p2, data=chunk)
+            except CommException as e:
+                raise _remap_error(e) from e
+            remaining -= chunk_size
+            if remaining == 0:
+                break
+        return response
 
-            size = min(len(payload), chunk_size)
-            if size != len(payload):
-                p2 = P2.MORE_APDU
-            else:
-                p2 = P2.LAST_APDU
 
-            resp = self.client.apdu_exchange(ins, payload[:size], p1, p2)
-            if resp:
-                return resp
-            payload = payload[size:]
+class BaseError(Exception):
+    """Base exception class for Ledger errors."""
+
+    pass
+
+
+class DeviceNotFoundException(BaseError):
+    """Exception raised when no Ledger device is found."""
+
+    pass
+
+
+class HashSigningNotEnabledError(BaseError):
+    """Exception raised when hash signing is not enabled on the Ledger device."""
+
+    pass
+
+
+class RequestDataTooLargeError(BaseError):
+    """Exception raised when the request data is too large."""
+
+    pass
+
+
+class DataParsingFailedError(BaseError):
+    """Exception raised when parsing Stellar data fails."""
+
+    pass
+
+
+class UserRefusedError(BaseError):
+    """Exception raised when the user refuses the action."""
+
+    pass
+
+
+def _get_default_client() -> LedgerClient:
+    """Get the default Ledger client.
+
+    Returns:
+        LedgerClient: The default Ledger client instance.
+
+    Raises:
+        DeviceNotFoundException: If no Ledger device is found.
+    """
+    devices = enumerate_devices()
+    if len(devices) == 0:
+        raise DeviceNotFoundException("No Ledger device found")
+    return LedgerClient(devices[0])
+
+
+def _remap_error(e: CommException) -> Exception:
+    status = e.sw
+    if status == SW.DENY:
+        return UserRefusedError("User refused the request")
+    elif status == SW.DATA_PARSING_FAIL:
+        return DataParsingFailedError("Unable to parse the provided data")
+    elif status == SW.HASH_SIGNING_MODE_NOT_ENABLED:
+        return HashSigningNotEnabledError(
+            "Hash signing not allowed. Have you enabled it in the app settings?"
+        )
+    elif status == SW.REQUEST_DATA_TOO_LARGE:
+        return RequestDataTooLargeError(
+            "The provided data is too large for the device to process"
+        )
+    return e
