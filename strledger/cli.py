@@ -102,8 +102,8 @@ def submit_transaction(
 def cli(ctx, verbose):
     """Stellar Ledger commands.
 
-    This project is built on the basis of ledgerctl,
-    you can check ledgerctl for more features.
+    This project is built on the basis of ledgerwallet,
+    you can check ledgerwallet for more features.
     """
     if verbose:
         utils.enable_apdu_log()

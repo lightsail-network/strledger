@@ -13,7 +13,7 @@ Usage: strledger [OPTIONS] COMMAND [ARGS]...
 
   Stellar Ledger commands.
 
-  This project is built on the basis of ledgerctl, you can check ledgerctl for
+  This project is built on the basis of ledgerwallet, you can check ledgerwallet for
   more features.
 
 Options:
