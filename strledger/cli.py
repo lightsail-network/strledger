@@ -1,12 +1,12 @@
 import base64
 import sys
-from typing import Callable, Any
+from typing import Callable, Any, Union
 from urllib.parse import urljoin
 
 import click
+
 from ledgerwallet import __version__ as ledger_wallet_version
 from ledgerwallet import utils
-from ledgerwallet.client import CommException
 from stellar_sdk import (
     DecoratedSignature,
     Network,
@@ -21,15 +21,16 @@ from stellar_sdk import __version__ as stellar_sdk_version
 from strledger import __issue__
 from strledger import __version__ as strledger_version
 from strledger.core import (
-    SW,
     StrLedger,
     DEFAULT_KEYPAIR_INDEX,
-    get_default_client,
     DeviceNotFoundException,
+    BaseError,
 )
 from stellar_sdk.utils import sha256
 
-_DEFAULT_HORIZON_SERVER_URL = "https://horizon.stellar.org"
+DEFAULT_HORIZON_SERVER_URL = "https://horizon.stellar.org"
+DEFAULT_NETWORK_PASSPHRASE = Network.PUBLIC_NETWORK_PASSPHRASE
+TESTNET_NETWORK_PASSPHRASE = Network.TESTNET_NETWORK_PASSPHRASE
 
 
 def echo_normal(message: str) -> None:
@@ -44,6 +45,57 @@ def echo_error(message: Any) -> None:
     click.echo(click.style(message, fg="red"), err=True)
 
 
+def parse_xdr(
+    xdr: str, network_passphrase: str
+) -> Union[TransactionEnvelope, FeeBumpTransactionEnvelope]:
+    try:
+        return parse_transaction_envelope_from_xdr(
+            xdr=xdr, network_passphrase=network_passphrase
+        )
+    except Exception:
+        echo_error(
+            "Failed to parse XDR.\n"
+            "Make sure to pass a valid base64-encoded transaction envelope.\n"
+            "You can check whether the data you submitted is valid "
+            "through XDR Viewer - https://laboratory.stellar.org/#xdr-viewer"
+        )
+        sys.exit(1)
+
+
+def parse_soroban_auth(xdr: str) -> HashIDPreimage:
+    try:
+        return HashIDPreimage.from_xdr(xdr)
+    except Exception:
+        echo_error(
+            "Failed to parse XDR.\n"
+            "Make sure to pass a valid base64-encoded soroban authorization."
+        )
+        sys.exit(1)
+
+
+def submit_transaction(
+    te: Union[TransactionEnvelope, FeeBumpTransactionEnvelope], horizon_url: str
+) -> None:
+    echo_normal("Submitting to the network...")
+    server = Server(horizon_url)
+    try:
+        server.submit_transaction(te)
+    except BaseRequestError as e:
+        echo_error("Submit failed, error info:")
+        echo_error(e)
+        sys.exit(1)
+
+    echo_success("Successfully submitted.")
+    tx_hash = te.hash_hex()
+    if te.network_passphrase == Network.PUBLIC_NETWORK_PASSPHRASE:
+        url = f"https://stellar.expert/explorer/public/tx/{tx_hash}"
+    elif te.network_passphrase == Network.TESTNET_NETWORK_PASSPHRASE:
+        url = f"https://stellar.expert/explorer/testnet/tx/{tx_hash}"
+    else:
+        url = urljoin(horizon_url, f"/transactions/{tx_hash}")
+    echo_success(f"Stellar Explorer: {url}")
+
+
 @click.group()
 @click.option("-v", "--verbose", is_flag=True, help="Display exchanged APDU.")
 @click.pass_context
@@ -53,13 +105,12 @@ def cli(ctx, verbose):
     This project is built on the basis of ledgerwallet,
     you can check ledgerwallet for more features.
     """
-
     if verbose:
         utils.enable_apdu_log()
 
     def get_client() -> StrLedger:
         try:
-            return get_default_client()
+            return StrLedger()
         except DeviceNotFoundException:
             echo_error("No Ledger device has been found.")
             sys.exit(1)
@@ -70,19 +121,21 @@ def cli(ctx, verbose):
 @cli.command(name="app-info")
 @click.pass_obj
 def get_app_info(get_client: Callable[[], StrLedger]) -> None:
-    """Get Stellar app info."""
+    """Get Stellar app configuration info."""
     client = get_client()
     data = client.get_app_info()
     echo_success(f"Stellar App Version: {data.version}")
     enabled = "Yes" if data.hash_signing_enabled else "No"
     echo_success(f"Hash Signing Enabled: {enabled}")
+    if data.max_data_size is not None:
+        echo_success(f"Max Data Size: {data.max_data_size} bytes")
 
 
 @cli.command(name="sign-tx")
 @click.option(
     "-n",
     "--network-passphrase",
-    default=Network.PUBLIC_NETWORK_PASSPHRASE,
+    default=DEFAULT_NETWORK_PASSPHRASE,
     required=False,
     help="Network passphrase (blank for public network).",
 )
@@ -108,7 +161,7 @@ def get_app_info(get_client: Callable[[], StrLedger]) -> None:
     type=str,
     required=False,
     help="Horizon Server URL.",
-    default=_DEFAULT_HORIZON_SERVER_URL,
+    default=DEFAULT_HORIZON_SERVER_URL,
     show_default=True,
 )
 @click.argument("transaction_envelope")
@@ -122,24 +175,9 @@ def sign_transaction(
     submit: bool,
     horizon_url: str,
 ):
-    """Sign a base64-encoded transaction envelope.
-
-    For testnet transactions, use the following network passphrase:
-    'Test SDF Network ; September 2015'
-    """
+    """Sign a base64-encoded transaction envelope."""
     client = get_client()
-    try:
-        te = parse_transaction_envelope_from_xdr(
-            xdr=transaction_envelope, network_passphrase=network_passphrase
-        )
-    except Exception:
-        echo_error(
-            "Failed to parse XDR.\n"
-            "Make sure to pass a valid base64-encoded transaction envelope.\n"
-            "You can check whether the data you submitted is valid "
-            "through XDR Viewer - https://laboratory.stellar.org/#xdr-viewer"
-        )
-        sys.exit(1)
+    te = parse_xdr(transaction_envelope, network_passphrase)
 
     tx_hash = te.hash_hex()
     echo_normal(f"Network Passphrase: {network_passphrase}")
@@ -156,50 +194,21 @@ def sign_transaction(
             te.signatures.append(decorated_signature)
         else:
             assert isinstance(te, (TransactionEnvelope, FeeBumpTransactionEnvelope))
-            client.sign_transaction(
+            te = client.sign_transaction(
                 transaction_envelope=te, keypair_index=keypair_index
             )
-    except CommException as e:
-        if hash_signing and e.sw == SW.TX_HASH_SIGNING_MODE_NOT_ENABLED:
-            echo_error(
-                "Hash signing is not enabled on this device.\n"
-                "Please enable it on the device and try again."
-            )
-        elif e.sw == SW.DENY:
-            echo_error("The request to sign the transaction was denied.")
-        elif e.sw == SW.SW_REQUEST_DATA_TOO_LARGE:
-            echo_error(
-                "The request data is too large, please try to sign a smaller transaction, or sign the hash only."
-            )
-        else:
-            echo_error(
-                f"Unknown exception, you can report the problem here: {__issue__}"
-            )
-            raise
+    except BaseError as e:
+        echo_error(e)
         sys.exit(1)
-
+    except Exception as e:
+        echo_error(f"Unknown exception, you can report the problem here: {__issue__}")
+        raise e
     echo_success("Signed successfully.")
     echo_success("Base64-encoded signed transaction envelope:")
     echo_success(te.to_xdr())
 
     if submit:
-        echo_normal("Submitting to the network...")
-        server = Server(horizon_url)
-        try:
-            server.submit_transaction(te)
-        except BaseRequestError as e:
-            echo_error("Submit failed, error info:")
-            echo_error(e)
-            sys.exit(1)
-
-        echo_success("Successfully submitted.")
-        if network_passphrase == Network.PUBLIC_NETWORK_PASSPHRASE:
-            url = f"https://stellar.expert/explorer/public/tx/{tx_hash}"
-        elif network_passphrase == Network.TESTNET_NETWORK_PASSPHRASE:
-            url = f"https://stellar.expert/explorer/testnet/tx/{tx_hash}"
-        else:
-            url = urljoin(horizon_url, f"/transactions/{tx_hash}")
-        echo_success(f"Stellar Explorer: {url}")
+        submit_transaction(te, horizon_url)
 
 
 @cli.command(name="sign-hash")
@@ -214,26 +223,17 @@ def sign_transaction(
 )
 @click.argument("hash")
 @click.pass_obj
-def sign_hash(
-    get_client: Callable[[], StrLedger],
-    hash: str,
-    keypair_index: int,
-):
+def sign_hash(get_client: Callable[[], StrLedger], hash: str, keypair_index: int):
     """Sign a hex encoded hash."""
     client = get_client()
     try:
         signature = client.sign_hash(hash, keypair_index)
-    except CommException as e:
-        if e.sw == SW.TX_HASH_SIGNING_MODE_NOT_ENABLED:
-            echo_error(
-                "Hash signing is not enabled on this device.\n"
-                "Please enable it on the device and try again."
-            )
-        elif e.sw == SW.DENY:
-            echo_error("The request to sign the transaction hash was denied.")
-        else:
-            raise e
+    except BaseError as e:
+        echo_error(e)
         sys.exit(1)
+    except Exception as e:
+        echo_error(f"Unknown exception, you can report the problem here: {__issue__}")
+        raise e
     signature_base64 = base64.b64encode(signature).decode()
     echo_success(signature_base64)
 
@@ -257,12 +257,12 @@ def get_address(
     client = get_client()
     try:
         keypair = client.get_keypair(keypair_index, confirm)
-    except CommException as e:
-        if e.sw == SW.DENY:
-            echo_error("The request to confirm the address was denied.")
-            sys.exit(1)
-        else:
-            raise e
+    except BaseError as e:
+        echo_error(e)
+        sys.exit(1)
+    except Exception as e:
+        echo_error(f"Unknown exception, you can report the problem here: {__issue__}")
+        raise e
     echo_success(keypair.public_key)
 
 
@@ -292,14 +292,7 @@ def sign_soroban_authorization(
 ):
     """Sign a base64-encoded soroban authorization (HashIDPreimage)."""
     client = get_client()
-    try:
-        auth = HashIDPreimage.from_xdr(soroban_authorization)
-    except Exception:
-        echo_error(
-            "Failed to parse XDR.\n"
-            "Make sure to pass a valid base64-encoded soroban authorization."
-        )
-        sys.exit(1)
+    auth = parse_soroban_auth(soroban_authorization)
 
     preimage_hash = sha256(auth.to_xdr_bytes()).hex()
     echo_normal(f"HashIDPreimage Hash: {preimage_hash}")
@@ -312,24 +305,12 @@ def sign_soroban_authorization(
             signature = client.sign_soroban_authorization(
                 auth, keypair_index=keypair_index
             )
-    except CommException as e:
-        if hash_signing and e.sw == SW.TX_HASH_SIGNING_MODE_NOT_ENABLED:
-            echo_error(
-                "Hash signing is not enabled on this device.\n"
-                "Please enable it on the device and try again."
-            )
-        elif e.sw == SW.DENY:
-            echo_error("The request to sign the Soroban authorization was denied.")
-        elif e.sw == SW.SW_REQUEST_DATA_TOO_LARGE:
-            echo_error(
-                "The request data is too large, please try to sign a Soroban authorization, or sign the hash only."
-            )
-        else:
-            echo_error(
-                f"Unknown exception, you can report the problem here: {__issue__}"
-            )
-            raise
+    except BaseError as e:
+        echo_error(e)
         sys.exit(1)
+    except Exception as e:
+        echo_error(f"Unknown exception, you can report the problem here: {__issue__}")
+        raise e
 
     echo_success("Signed successfully.")
     echo_success("Base64-encoded signature:")

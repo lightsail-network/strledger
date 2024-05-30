@@ -1,4 +1,4 @@
-# strledger - Sign Stellar Transaction with Ledger on the command line.
+# strledger - Ledger Hardware Wallet Stellar Python bindings.
 
 ![example](https://github.com/lightsail-network/strledger/blob/main/img/example.png)
 
@@ -21,7 +21,7 @@ Options:
   --help         Show this message and exit.
 
 Commands:
-  app-info     Get Stellar app info.
+  app-info     Get Stellar app configuration info.
   get-address  Get Stellar public address.
   sign-auth    Sign a base64-encoded soroban authorization (HashIDPreimage).
   sign-hash    Sign a hex encoded hash.
@@ -32,9 +32,9 @@ Commands:
 ## Library Usage
 
 ```python
-from strledger import get_default_client
+from strledger import StrLedger
 
-client = get_default_client()
+client = StrLedger()
 # Use the Stellar Python SDK to build a transaction, see https://github.com/StellarCN/py-stellar-base
 transaction_envelope = ...
 client.sign_transaction(transaction_envelope=transaction_envelope, keypair_index=0)

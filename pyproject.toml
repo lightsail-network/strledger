@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "strledger"
-version = "0.7.0"
-description = "Sign Stellar Transaction with Ledger on the command line."
+version = "0.8.0"
+description = "Ledger Hardware Wallet Stellar Python bindings."
 authors = ["overcat <4catcode@gmail.com>"]
 license = "MIT License"
 readme = "README.md"
@@ -32,7 +32,7 @@ classifiers = [
 [tool.poetry.dependencies]
 python = ">=3.8,<4.0"
 click = "^8.1.7"
-stellar-sdk = { version = ">=9,<10" }
+stellar-sdk = { version = ">=9,<11" }
 ledgerwallet = "^0.4.0"
 
 [build-system]
