@@ -32,9 +32,9 @@ Commands:
 ## Library Usage
 
 ```python
-from strledger import get_default_client
+from strledger import StrLedger
 
-client = get_default_client()
+client = StrLedger()
 # Use the Stellar Python SDK to build a transaction, see https://github.com/StellarCN/py-stellar-base
 transaction_envelope = ...
 client.sign_transaction(transaction_envelope=transaction_envelope, keypair_index=0)
