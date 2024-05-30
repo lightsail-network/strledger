@@ -21,12 +21,12 @@ Options:
   --help         Show this message and exit.
 
 Commands:
-  app-info      Get Stellar app info.
-  get-address   Get Stellar public address.
-  sign-auth     Sign a base64-encoded soroban authorization...
-  sign-tx       Sign a base64-encoded transaction envelope.
-  sign-tx-hash  Sign a hex encoded hash.
-  version       Get strledger version info.
+  app-info     Get Stellar app configuration info.
+  get-address  Get Stellar public address.
+  sign-auth    Sign a base64-encoded soroban authorization (HashIDPreimage).
+  sign-hash    Sign a hex encoded hash.
+  sign-tx      Sign a base64-encoded transaction envelope.
+  version      Get strledger version info.
 ```
 
 ## Library Usage
