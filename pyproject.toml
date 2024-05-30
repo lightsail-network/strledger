@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "strledger"
 version = "0.8.0"
-description = "Sign Stellar Transaction with Ledger on the command line."
+description = "Ledger Hardware Wallet Stellar Python bindings."
 authors = ["overcat <4catcode@gmail.com>"]
 license = "MIT License"
 readme = "README.md"

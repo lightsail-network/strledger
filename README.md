@@ -1,4 +1,4 @@
-# strledger - Sign Stellar Transaction with Ledger on the command line.
+# strledger - Ledger Hardware Wallet Stellar Python bindings.
 
 ![example](https://github.com/lightsail-network/strledger/blob/main/img/example.png)
 
