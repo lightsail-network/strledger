@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "strledger"
-version = "0.8.0"
+version = "0.8.1"
 description = "Ledger Hardware Wallet Stellar Python bindings."
 authors = ["overcat <4catcode@gmail.com>"]
 license = "MIT License"
@@ -31,7 +31,7 @@ classifiers = [
 [tool.poetry.dependencies]
 python = ">=3.8,<4.0"
 click = "^8.1.7"
-stellar-sdk = { version = ">=9,<11" }
+stellar-sdk = { version = ">=9,<12" }
 ledgerwallet = "^0.4.0"
 
 [tool.poetry.group.dev.dependencies]
