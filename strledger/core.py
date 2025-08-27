@@ -37,6 +37,7 @@ class Ins(IntEnum):
     GET_CONF = 0x06
     SIGN_HASH = 0x08
     SIGN_SOROBAN_AUTHORIZATION = 0x0A
+    SIGN_MESSAGE = 0x0C
 
 
 class P1(IntEnum):
@@ -222,6 +223,22 @@ class StrLedger:
         path = Bip32Path.build(f"44'/148'/{keypair_index}'")
         payload = path + soroban_authorization.to_xdr_bytes()
         signature = self._send_payload(Ins.SIGN_SOROBAN_AUTHORIZATION, payload)
+        return signature
+
+    def sign_message(
+        self, message: Union[str, bytes], keypair_index: int = DEFAULT_KEYPAIR_INDEX
+    ) -> bytes:
+        """Sign a SEP-0053 message.
+
+        Args:
+            message (Union[str, bytes]): The message to sign.
+            keypair_index (int): The keypair index (default is 0).
+
+        Returns:
+            bytes: The signature.
+        """
+        data = message.encode() if isinstance(message, str) else message
+        signature = self._send_payload(Ins.SIGN_MESSAGE, data)
         return signature
 
     def _send_payload(self, ins: Ins, payload) -> bytes:
