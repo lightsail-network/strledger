@@ -14,6 +14,7 @@ from stellar_sdk import (
     Server,
     TransactionEnvelope,
     FeeBumpTransactionEnvelope,
+    Keypair,
 )
 from stellar_sdk.xdr import HashIDPreimage
 from stellar_sdk.exceptions import BaseRequestError
@@ -305,6 +306,54 @@ def sign_soroban_authorization(
             signature = client.sign_soroban_authorization(
                 auth, keypair_index=keypair_index
             )
+    except BaseError as e:
+        echo_error(e)
+        sys.exit(1)
+    except Exception as e:
+        echo_error(f"Unknown exception, you can report the problem here: {__issue__}")
+        raise e
+
+    echo_success("Signed successfully.")
+    echo_success("Base64-encoded signature:")
+    echo_success(base64.b64encode(signature).decode())
+
+
+@cli.command(name="sign-message")
+@click.option(
+    "-i",
+    "--keypair-index",
+    type=int,
+    required=False,
+    help="Keypair Index.",
+    default=DEFAULT_KEYPAIR_INDEX,
+    show_default=True,
+)
+@click.option(
+    "-a",
+    "--hash-signing",
+    is_flag=True,
+    help="Only send the hash to the device for signing.",
+)
+@click.argument("message")
+@click.pass_obj
+def sign_message(
+    get_client: Callable[[], StrLedger],
+    keypair_index: int,
+    hash_signing: bool,
+    message: str,
+):
+    """Sign a base64-encoded message."""
+    client = get_client()
+    echo_normal("Please confirm the message on Ledger.")
+
+    message_bytes = base64.b64decode(message)
+
+    try:
+        if hash_signing:
+            message_hash = Keypair._calculate_message_hash(message_bytes)
+            signature = client.sign_hash(message_hash, keypair_index)
+        else:
+            signature = client.sign_message(message_bytes, keypair_index)
     except BaseError as e:
         echo_error(e)
         sys.exit(1)
