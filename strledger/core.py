@@ -237,8 +237,10 @@ class StrLedger:
         Returns:
             bytes: The signature.
         """
-        data = message.encode() if isinstance(message, str) else message
-        signature = self._send_payload(Ins.SIGN_MESSAGE, data)
+        sign_data = message.encode() if isinstance(message, str) else message
+        path = Bip32Path.build(f"44'/148'/{keypair_index}'")
+        payload = path + sign_data
+        signature = self._send_payload(Ins.SIGN_MESSAGE, payload)
         return signature
 
     def _send_payload(self, ins: Ins, payload) -> bytes:
