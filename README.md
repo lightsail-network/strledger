@@ -13,20 +13,21 @@ Usage: strledger [OPTIONS] COMMAND [ARGS]...
 
   Stellar Ledger commands.
 
-  This project is built on the basis of ledgerwallet, you can check ledgerwallet for
-  more features.
+  This project is built on the basis of ledgerwallet, you can check
+  ledgerwallet for more features.
 
 Options:
   -v, --verbose  Display exchanged APDU.
   --help         Show this message and exit.
 
 Commands:
-  app-info     Get Stellar app configuration info.
-  get-address  Get Stellar public address.
-  sign-auth    Sign a base64-encoded soroban authorization (HashIDPreimage).
-  sign-hash    Sign a hex encoded hash.
-  sign-tx      Sign a base64-encoded transaction envelope.
-  version      Get strledger version info.
+  app-info      Get Stellar app configuration info.
+  get-address   Get Stellar public address.
+  sign-auth     Sign a base64-encoded soroban authorization...
+  sign-hash     Sign a hex encoded hash.
+  sign-message  Sign a base64-encoded message.
+  sign-tx       Sign a base64-encoded transaction envelope.
+  version       Get strledger version info.
 ```
 
 ## Library Usage

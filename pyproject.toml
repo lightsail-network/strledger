@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "strledger"
-version = "0.10.0"
+version = "0.10.1"
 description = "Ledger Hardware Wallet Stellar Python bindings."
 authors = ["overcat <4catcode@gmail.com>"]
 license = "MIT License"
